@@ -23,7 +23,6 @@ resources:
   - backend-service.yaml
   - frontend-deployment.yaml
   - frontend-service.yaml
-  - mongo-deployment.yaml
   - ingress.yaml
   - hpa.yaml
   - network-policy.yaml
@@ -34,8 +33,6 @@ images:
     newTag: latest
   - name: ghcr.io/GITHUB_USER/orderit-frontend
     newTag: latest
-  - name: mongo
-    newTag: "6-alpine"
 
 # Replicas (can be overridden per environment)
 replicas:

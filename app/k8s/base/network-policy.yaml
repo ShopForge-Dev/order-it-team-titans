@@ -32,15 +32,14 @@ spec:
         - protocol: TCP
           port: 4000
   egress:
-    # Allow to MongoDB
+    # Allow to MongoDB Atlas / external MongoDB database
     - to:
-        - podSelector:
-            matchLabels:
-              app: mongo
+        - ipBlock:
+            cidr: 0.0.0.0/0
       ports:
         - protocol: TCP
           port: 27017
-    # Allow external HTTPS (for APIs like Stripe, Cloudinary)
+    # Allow external HTTPS (for APIs like Stripe, Cloudinary, MongoDB Atlas TLS)
     - to:
         - namespaceSelector: {}
       ports:
@@ -87,39 +86,6 @@ spec:
       ports:
         - protocol: TCP
           port: 4000
-    # Allow DNS
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: mongo-network-policy
-  namespace: orderit
-  labels:
-    app: mongo
-spec:
-  podSelector:
-    matchLabels:
-      app: mongo
-  policyTypes:
-    - Ingress
-    - Egress
-  ingress:
-    # Allow from backend pods
-    - from:
-        - podSelector:
-            matchLabels:
-              app: backend
-      ports:
-        - protocol: TCP
-          port: 27017
-  egress:
     # Allow DNS
     - to:
         - namespaceSelector:
