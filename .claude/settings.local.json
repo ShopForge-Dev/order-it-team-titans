@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(graphify query *)",
+      "Bash(npm install *)",
+      "Bash(timeout 8 node server.js)",
+      "Bash(git config *)"
+    ]
+  }
+}
