@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "deobfuscator": "^2.4.6",
+    "unminify": "^2.0.0"
+  }
+}

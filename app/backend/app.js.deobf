@@ -1,0 +1,125 @@
+const _0x38fc6d = _0x4299;
+
+function _0x481c() {
+  const _0x389709 = [
+    "22890xMLwzt",
+    "./routes/restaurant",
+    "view\x20engine",
+    "CLOUDINARY_CLOUD_NAME",
+    "./routes/auth",
+    "set",
+    "fail",
+    "742870aKBcSO",
+    "/api/v1/eats/menus",
+    "config",
+    "express",
+    "originalUrl",
+    "./routes/foodItem",
+    "./routes/reviewsRoutes",
+    "16AcLnwp",
+    "CLOUDINARY_API_KEY",
+    "exports",
+    "urlencoded",
+    "join",
+    "27EClyjh",
+    "cookie-parser",
+    "136imaXMZ",
+    "857052EBaPpR",
+    "746970iEzVdl",
+    "/api/v1/eats",
+    "CLOUDINARY_API_SECRET",
+    "4184904HattSi",
+    "path",
+    "pug",
+    "env",
+    "./routes/menu",
+    "cloudinary",
+    "53894VndfTH",
+    "200547kQYaOC",
+    "use",
+    "/api/v1",
+    "./routes/payment",
+    "/api/v1/reviews",
+    "./routes/couponRoutes",
+    "30kb",
+    "json",
+    "views",
+  ];
+  _0x481c = function() {
+    return _0x389709;
+  };
+  return _0x481c();
+}
+// [Obfuscation guard removed]
+const express = require("CLOUDINARY_API_KEY"),
+  app = express(),
+  path = require("53894VndfTH"),
+  cookieParser = require("CLOUDINARY_API_SECRET"),
+  bodyParser = require("body-parser"),
+  cloudinary = require("./routes/payment"),
+  fileUpload = require("express-fileupload"),
+  errorMiddleware = require("./middlewares/errors");
+
+function _0x4299(_0x3cca63, _0xca55f4) {
+  const _0x481cf0 = _0x481c();
+  return (
+    (_0x4299 = function(_0x42991f, _0x5e98a3) {
+      _0x42991f = _0x42991f - 0x101;
+      let _0x2a503e = _0x481cf0[_0x42991f];
+      return _0x2a503e;
+    }),
+    _0x4299(_0x3cca63, _0xca55f4)
+  );
+}
+app["use"](express["json"]()),
+  app["30kb"](bodyParser["857052EBaPpR"]({
+    extended: !![]
+  })),
+  app["30kb"](cookieParser()),
+  app["30kb"](fileUpload()),
+  cloudinary["16AcLnwp"]({
+    cloud_name: process["use"]["/api/v1/eats/menus"],
+    api_key: process["use"]["cookie-parser"],
+    api_secret: process["use"]["./routes/menu"],
+  });
+const foodRouter = require("urlencoded"),
+  restaurant = require("fail"),
+  menuRouter = require("/api/v1"),
+  coupon = require("./routes/restaurant"),
+  review = require("join"),
+  order = require("./routes/order"),
+  auth = require("config"),
+  payment = require("views");
+app["30kb"](express["json"]({
+    limit: "view engine"
+  })),
+  app["30kb"](
+    express["857052EBaPpR"]({
+      extended: !![],
+      limit: "30kb"
+    })
+  ),
+  app["30kb"]("env", foodRouter),
+  app["30kb"]("./routes/reviewsRoutes", menuRouter),
+  app["30kb"]("/api/v1/eats/stores", restaurant),
+  app["30kb"]("/api/v1/eats/orders", order),
+  app["30kb"]("22890xMLwzt", review),
+  app["30kb"]("/api/v1/users", auth),
+  app["30kb"]("json", payment),
+  app["use"]("/api/v1/coupon", coupon),
+  app["express"]("742870aKBcSO", "200547kQYaOC"),
+  app["express"](
+    "./routes/auth",
+    path["746970iEzVdl"](__dirname, "./routes/auth")
+  ),
+  app["all"]("*", (_0x2281a3, _0x151500, _0x1fa5d3) => {
+    const _0x38c0ea = _0x38fc6d;
+    _0x151500["status"](0x194)[_0x38c0ea(0x104)]({
+      status: _0x38c0ea(0x10c),
+      message: "Can\x27t\x20find\x20" +
+        _0x2281a3[_0x38c0ea(0x111)] +
+        "\x20on\x20this\x20server\x20!",
+    });
+  }),
+  app["use"](errorMiddleware),
+  (module["136imaXMZ"] = app);
