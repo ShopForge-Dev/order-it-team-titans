@@ -9,7 +9,14 @@ import{
 }from "../constants/restaurantConstant.js";
 
 const initialState = {
-    restaurants: [],
+    restaurants: {
+        restaurants: [],
+        count: 0,
+    },
+    loading: false,
+    error: null,
+    showVegOnly: false,
+    pureVegRestaurantsCount: 0,
 };
 
 export const restaurantReducer = (state = initialState,action)=>{

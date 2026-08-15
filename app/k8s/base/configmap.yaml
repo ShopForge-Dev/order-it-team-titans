@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orderit-config
+  namespace: orderit
+  labels:
+    app: orderit
+data:
+  NODE_ENV: "production"
+  BACKEND_HOST: "backend.orderit.svc.cluster.local"
+  BACKEND_PORT: "4000"
+  FRONTEND_HOST: "frontend.orderit.svc.cluster.local"
+  FRONTEND_PORT: "80"
+  DB_HOST: "mongo.orderit.svc.cluster.local"
+  DB_PORT: "27017"
+  DB_NAME: "orderit"
+  LOG_LEVEL: "info"
+  CORS_ORIGIN: "*"
+  API_PREFIX: "/api/v1"

@@ -1,0 +1,54 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: orderit-dev
+
+namespace: orderit
+
+bases:
+  - ../../base
+
+namePrefix: dev-
+
+commonLabels:
+  environment: development
+
+replicas:
+  - name: backend
+    count: 1
+  - name: frontend
+    count: 1
+
+images:
+  - name: ghcr.io/GITHUB_USER/orderit-backend
+    newTag: develop
+  - name: ghcr.io/GITHUB_USER/orderit-frontend
+    newTag: develop
+
+patches:
+  # Reduce resource limits for dev
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: backend
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "256Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "250m"
+
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: frontend
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "128Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "100m"

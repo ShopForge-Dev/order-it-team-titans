@@ -1,0 +1,226 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: orderit
+  labels:
+    app: backend
+    tier: api
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: backend
+      tier: api
+  template:
+    metadata:
+      labels:
+        app: backend
+        tier: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: orderit
+      imagePullPolicy: IfNotPresent
+      containers:
+        - name: backend
+          image: ghcr.io/GITHUB_USER/orderit-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 4000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+
+          # Startup probe (waits for app to be ready)
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 30
+
+          # Environment variables
+          env:
+            # From ConfigMap
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: orderit-config
+                  key: NODE_ENV
+            - name: BACKEND_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: orderit-config
+                  key: BACKEND_HOST
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: orderit-config
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: orderit-config
+                  key: DB_PORT
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: orderit-config
+                  key: DB_NAME
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: orderit-config
+                  key: LOG_LEVEL
+
+            # From Secrets
+            - name: DB_LOCAL_URI
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: DB_LOCAL_URI
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: JWT_SECRET
+            - name: JWT_EXPIRE
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: JWT_EXPIRE
+            - name: COOKIE_EXPIRE
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: COOKIE_EXPIRE
+            - name: CLOUDINARY_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: CLOUDINARY_NAME
+            - name: CLOUDINARY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: CLOUDINARY_API_KEY
+            - name: CLOUDINARY_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: CLOUDINARY_API_SECRET
+            - name: STRIPE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: STRIPE_KEY
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: STRIPE_SECRET_KEY
+            - name: SMTP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: SMTP_HOST
+            - name: SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: SMTP_PORT
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: SMTP_PASSWORD
+            - name: SMTP_FROM_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: orderit-secrets
+                  key: SMTP_FROM_EMAIL
+
+          # Resource limits
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          # Security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: false
+            capabilities:
+              drop:
+                - ALL
+
+          # Volume mounts
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /app/logs
+
+      # Pod disruption budget (prevent forced eviction)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - backend
+                topologyKey: kubernetes.io/hostname
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+
+      # Termination grace period
+      terminationGracePeriodSeconds: 30

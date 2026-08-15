@@ -4,7 +4,22 @@
       "Bash(graphify query *)",
       "Bash(npm install *)",
       "Bash(timeout 8 node server.js)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git rm *)",
+      "Bash(rm -rf app/.git)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(timeout 10 NODE_ENV=DEVELOPMENT node server.js)",
+      "Bash(/Users/harshit.sharma8/.local/share/uv/tools/graphifyy/bin/python *)",
+      "Bash(mv app.js app.js.obfuscated)",
+      "Bash(mv app.js.clean app.js)",
+      "Bash(mv server.js server.js.obfuscated)",
+      "Bash(mv server.js.clean server.js)",
+      "Bash(mv config/database.js config/database.js.obfuscated)",
+      "Bash(chmod +x /Users/harshit.sharma8/Documents/Learning/Zidd_project_copy/app/docker-build.sh)",
+      "Bash(chmod +x /Users/harshit.sharma8/Documents/Learning/Zidd_project_copy/app/k8s/deploy.sh)"
     ]
   }
 }

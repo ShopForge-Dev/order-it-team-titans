@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: orderit-base
+
+namespace: orderit
+
+commonLabels:
+  app: orderit
+  managed-by: kustomize
+
+commonAnnotations:
+  kustomize.config.k8s.io/version: v5.0.0
+  deployment-tool: kustomize
+  managed-by: kustomize
+
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - configmap.yaml
+  - secret.yaml
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
+  - mongo-deployment.yaml
+  - ingress.yaml
+  - hpa.yaml
+  - network-policy.yaml
+
+# Images (update these with your registry)
+images:
+  - name: ghcr.io/GITHUB_USER/orderit-backend
+    newTag: latest
+  - name: ghcr.io/GITHUB_USER/orderit-frontend
+    newTag: latest
+  - name: mongo
+    newTag: "6-alpine"
+
+# Replicas (can be overridden per environment)
+replicas:
+  - name: backend
+    count: 2
+  - name: frontend
+    count: 2

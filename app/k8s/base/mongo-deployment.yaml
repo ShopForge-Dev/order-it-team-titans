@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo
+  namespace: orderit
+  labels:
+    app: mongo
+    tier: database
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mongo
+      tier: database
+  template:
+    metadata:
+      labels:
+        app: mongo
+        tier: database
+    spec:
+      serviceAccountName: orderit
+      containers:
+        - name: mongo
+          image: mongo:6-alpine
+          ports:
+            - name: mongodb
+              containerPort: 27017
+              protocol: TCP
+
+          # Health checks
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+
+          env:
+            - name: MONGO_INITDB_DATABASE
+              value: "orderit"
+
+          # Resource limits
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          # Security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+          # Volume mounts
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+            - name: mongo-config
+              mountPath: /data/configdb
+
+      volumes:
+        - name: mongo-data
+          emptyDir: {}
+        - name: mongo-config
+          emptyDir: {}
+
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: orderit
+  labels:
+    app: mongo
+    tier: database
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: mongodb
+      protocol: TCP
+  selector:
+    app: mongo
+    tier: database

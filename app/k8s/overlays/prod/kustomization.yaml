@@ -1,0 +1,63 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: orderit-prod
+
+namespace: orderit
+
+bases:
+  - ../../base
+
+commonLabels:
+  environment: production
+
+replicas:
+  - name: backend
+    count: 3
+  - name: frontend
+    count: 3
+
+images:
+  - name: ghcr.io/GITHUB_USER/orderit-backend
+    newTag: stable
+  - name: ghcr.io/GITHUB_USER/orderit-frontend
+    newTag: stable
+
+patches:
+  # Increase replicas in HPA for prod
+  - target:
+      group: autoscaling
+      version: v2
+      kind: HorizontalPodAutoscaler
+      name: backend-hpa
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicas
+        value: 20
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+
+  - target:
+      group: autoscaling
+      version: v2
+      kind: HorizontalPodAutoscaler
+      name: frontend-hpa
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicas
+        value: 10
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+
+  # Enable pod disruption budget for prod
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: backend
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/affinity/podAntiAffinity/preferredDuringSchedulingIgnoredDuringExecution/0/weight
+        value: 100
