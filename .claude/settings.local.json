@@ -19,7 +19,12 @@
       "Bash(mv server.js.clean server.js)",
       "Bash(mv config/database.js config/database.js.obfuscated)",
       "Bash(chmod +x /Users/harshit.sharma8/Documents/Learning/Zidd_project_copy/app/docker-build.sh)",
-      "Bash(chmod +x /Users/harshit.sharma8/Documents/Learning/Zidd_project_copy/app/k8s/deploy.sh)"
+      "Bash(chmod +x /Users/harshit.sharma8/Documents/Learning/Zidd_project_copy/app/k8s/deploy.sh)",
+      "Bash(npm run *)",
+      "Bash(pkill -f \"node server.js\")",
+      "Bash(NODE_ENV=DEVELOPMENT node server.js)",
+      "Read(//private/tmp/**)",
+      "Bash(curl -s http://localhost:4000/health)"
     ]
   }
 }

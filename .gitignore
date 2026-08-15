@@ -5,3 +5,21 @@ node_modules/
 config.env
 .env.local
 .env.*.local
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# OCI credentials
+.oci/
+*.pem
+OCI_SETUP.md

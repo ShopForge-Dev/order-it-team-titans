@@ -33,8 +33,11 @@ export const restaurantReducer = (state = initialState,action)=>{
             return{
                 ...state,
                 loading: false,
-                count: action.payload.count,
-                restaurants: action.payload,
+                count: action.payload.count || 0,
+                restaurants: {
+                    restaurants: action.payload.restaurants || [],
+                    count: action.payload.count || 0,
+                },
             };
         case ALL_RESTAURANTS_FAIL:
             return{

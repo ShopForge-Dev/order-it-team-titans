@@ -3,16 +3,8 @@ const app = express();
 const path = require("path");
 const cookieParser = require("cookie-parser");
 const bodyParser = require("body-parser");
-const cloudinary = require("cloudinary");
 const fileUpload = require("express-fileupload");
 const errorMiddleware = require("./middlewares/errors");
-
-// Cloudinary configuration
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
 
 // Middleware
 app.use(express.json());
@@ -43,6 +35,53 @@ app.use("/api/v1/reviews", reviewRouter);
 app.use("/api/v1/users", authRouter);
 app.use("/api/v1/payment", paymentRouter);
 app.use("/api/v1/coupon", couponRouter);
+
+// Health check endpoints (K8s probes)
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "orderit-backend",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
+app.get("/ready", (req, res) => {
+  const mongoose = require("mongoose");
+  const isReady = mongoose.connection.readyState === 1;
+
+  if (isReady) {
+    return res.status(200).json({
+      ready: true,
+      checks: { database: true },
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  res.status(503).json({
+    ready: false,
+    checks: { database: false },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/metrics", (req, res) => {
+  res.type("text/plain");
+  res.send(`
+# HELP process_uptime_seconds Process uptime in seconds
+# TYPE process_uptime_seconds gauge
+process_uptime_seconds ${process.uptime()}
+
+# HELP nodejs_memory_usage_bytes Memory usage in bytes
+# TYPE nodejs_memory_usage_bytes gauge
+nodejs_memory_usage_bytes{type="heapUsed"} ${
+    process.memoryUsage().heapUsed
+  }
+nodejs_memory_usage_bytes{type="heapTotal"} ${
+    process.memoryUsage().heapTotal
+  }
+  `);
+});
 
 // View engine setup
 app.set("view engine", "pug");

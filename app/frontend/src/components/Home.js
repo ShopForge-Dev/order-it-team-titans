@@ -18,12 +18,8 @@ const Home = () => {
   } = useSelector((state) => state.restaurants);
 
     useEffect(() =>{
-      if (restaurantsError)
-      {
-        return alert.error(restaurantsError);
-      }
-      dispatch(getRestaurants(keyword));  
-    } , [dispatch, restaurantsError,keyword]);
+      dispatch(getRestaurants(keyword));
+    } , [dispatch, keyword]);
 
 
     const handleSortByRatings =() =>{
