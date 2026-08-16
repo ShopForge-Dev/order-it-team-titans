@@ -1,0 +1,39 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: orderit-backend
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: orderit
+      component: backend
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+  namespaceSelector:
+    matchNames:
+    - orderit
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: orderit-frontend
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: orderit
+      component: frontend
+  endpoints:
+  - port: http
+    interval: 30s
+    path: /health
+  namespaceSelector:
+    matchNames:
+    - orderit

@@ -1,0 +1,26 @@
+{
+  "env": {
+    "node": true,
+    "es2021": true,
+    "jest": true
+  },
+  "extends": [
+    "airbnb-base"
+  ],
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "rules": {
+    "no-console": "warn",
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "import/no-extraneous-dependencies": ["error", { "devDependencies": true }],
+    "max-len": ["warn", { "code": 120 }],
+    "no-param-reassign": ["error", { "props": false }]
+  },
+  "ignorePatterns": [
+    "*.obfuscated",
+    "node_modules",
+    "utils/seeder.js"
+  ]
+}

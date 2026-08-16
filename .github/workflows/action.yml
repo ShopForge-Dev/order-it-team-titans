@@ -1,0 +1,142 @@
+name: 'Deploy to K8s'
+description: 'Set image tags in a Kustomize overlay and apply it to the target K8s cluster (staging K3s VM or production OKE)'
+
+inputs:
+  environment:
+    description: 'Target environment: staging or production'
+    required: true
+    type: choice
+    options: [staging, production]
+  overlay:
+    description: 'Kustomize overlay name (staging or production)'
+    required: true
+  image_tag:
+    description: 'Immutable image tag to deploy (the sha- tag from build-and-push)'
+    required: true
+  # OCI credentials (for production OKE)
+  oci_user:
+    required: false
+  oci_tenancy:
+    required: false
+  oci_fingerprint:
+    required: false
+  oci_key_content:
+    required: false
+  oci_region:
+    required: false
+  oke_cluster_id:
+    required: false
+  # Staging VM credentials
+  staging_vm_ip:
+    required: false
+  staging_ssh_key:
+    required: false
+
+runs:
+  using: 'composite'
+  steps:
+    # -----------------------------------------------------------
+    # Common: Install kubectl & kustomize
+    # -----------------------------------------------------------
+    - name: Install kubectl & kustomize
+      shell: bash
+      run: |
+        curl -sLO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+        curl -sL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+        sudo mv kustomize /usr/local/bin/
+
+    # -----------------------------------------------------------
+    # PRODUCTION: OKE via OCI CLI
+    # -----------------------------------------------------------
+    - name: Configure OCI credentials (production)
+      if: inputs.environment == 'production'
+      shell: bash
+      run: |
+        mkdir -p ~/.oci
+        printf '%s' "${{ inputs.oci_key_content }}" > ~/.oci/key.pem
+        chmod 600 ~/.oci/key.pem
+        cat > ~/.oci/config <<EOF
+        [DEFAULT]
+        user=${{ inputs.oci_user }}
+        fingerprint=${{ inputs.oci_fingerprint }}
+        tenancy=${{ inputs.oci_tenancy }}
+        region=${{ inputs.oci_region }}
+        key_file=~/.oci/key.pem
+        EOF
+        chmod 600 ~/.oci/config
+
+    - name: Install oci-cli (production)
+      if: inputs.environment == 'production'
+      shell: bash
+      run: pip install --quiet oci-cli
+
+    - name: Fetch kubeconfig for OKE (production)
+      if: inputs.environment == 'production'
+      shell: bash
+      run: |
+        mkdir -p ~/.kube
+        oci ce cluster create-kubeconfig \
+          --cluster-id "${{ inputs.oke_cluster_id }}" \
+          --file "$HOME/.kube/config" \
+          --region "${{ inputs.oci_region }}" \
+          --token-version 2.0.0 \
+          --kube-endpoint PUBLIC_ENDPOINT
+
+    # -----------------------------------------------------------
+    # STAGING: K3s VM via SSH
+    # -----------------------------------------------------------
+    - name: Set up SSH for staging VM
+      if: inputs.environment == 'staging'
+      shell: bash
+      run: |
+        mkdir -p ~/.ssh
+        printf '%s' "${{ inputs.staging_ssh_key }}" > ~/.ssh/staging_key
+        chmod 600 ~/.ssh/staging_key
+        ssh-keyscan -H ${{ inputs.staging_vm_ip }} >> ~/.ssh/known_hosts
+
+    - name: Fetch kubeconfig from staging VM
+      if: inputs.environment == 'staging'
+      shell: bash
+      run: |
+        mkdir -p ~/.kube
+        scp -i ~/.ssh/staging_key ubuntu@${{ inputs.staging_vm_ip }}:/etc/rancher/k3s/k3s.yaml ~/.kube/config
+        # Update server URL to use public IP
+        sed -i "s|server: https://127.0.0.1:6443|server: https://${{ inputs.staging_vm_ip }}:6443|" ~/.kube/config
+        sed -i 's|insecure-skip-tls-verify: false|insecure-skip-tls-verify: true|' ~/.kube/config
+
+    # -----------------------------------------------------------
+    # Common: Set image tags & apply overlay
+    # -----------------------------------------------------------
+    - name: Set image tags for this deploy
+      shell: bash
+      working-directory: app/k8s/overlays/${{ inputs.overlay }}
+      run: |
+        kustomize edit set image \
+          ghcr.io/<GITHUB_ORG>/orderit-backend=ghcr.io/${{ github.repository_owner }}/orderit-backend:${{ inputs.image_tag }} \
+          ghcr.io/<GITHUB_ORG>/orderit-frontend=ghcr.io/${{ github.repository_owner }}/orderit-frontend:${{ inputs.image_tag }}
+
+    - name: Apply overlay (production)
+      if: inputs.environment == 'production'
+      shell: bash
+      run: |
+        kubectl apply -k app/k8s/overlays/${{ inputs.overlay }}
+        NS=orderit
+        kubectl rollout status deployment/backend -n "$NS" --timeout=180s
+        kubectl rollout status deployment/frontend -n "$NS" --timeout=180s
+
+    - name: Apply overlay via SSH (staging)
+      if: inputs.environment == 'staging'
+      shell: bash
+      run: |
+        scp -i ~/.ssh/staging_key -r app/k8s/overlays/${{ inputs.overlay }} ubuntu@${{ inputs.staging_vm_ip }}:/tmp/kustomize-${{ inputs.overlay }}
+        ssh -i ~/.ssh/staging_key ubuntu@${{ inputs.staging_vm_ip }} "
+          sudo kubectl apply -k /tmp/kustomize-${{ inputs.overlay }} &&
+          sudo kubectl rollout status deployment/staging-backend -n orderit --timeout=180s &&
+          sudo kubectl rollout status deployment/staging-frontend -n orderit --timeout=180s
+        "
+
+    - name: Clean up credentials
+      if: always()
+      shell: bash
+      run: rm -rf ~/.oci ~/.kube ~/.ssh/staging_key

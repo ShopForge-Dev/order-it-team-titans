@@ -1,0 +1,127 @@
+name: CD Deploy
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options: [staging, production]
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Terraform apply (only on workflow_dispatch or when terraform/** changes)
+  # ---------------------------------------------------------------------
+  terraform-apply:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.modified, 'terraform/')
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment == 'production' || github.ref_name == 'main' && 'production' || 'development' }}
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+
+      - name: Write OCI private key
+        run: printf '%s' "${{ secrets.OCI_CLI_KEY_CONTENT }}" > /tmp/oci_key.pem
+      - run: echo "TF_VAR_private_key_path=/tmp/oci_key.pem" >> "$GITHUB_ENV"
+
+      - name: Set Terraform variables
+        run: |
+          echo "TF_VAR_tenancy_ocid=${{ secrets.OCI_CLI_TENANCY }}" >> "$GITHUB_ENV"
+          echo "TF_VAR_user_ocid=${{ secrets.OCI_CLI_USER }}" >> "$GITHUB_ENV"
+          echo "TF_VAR_fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}" >> "$GITHUB_ENV"
+          echo "TF_VAR_region=${{ secrets.OCI_CLI_REGION }}" >> "$GITHUB_ENV"
+          if [ "${{ github.event.inputs.environment }}" = "production" ] || [ "${{ github.ref_name }}" = "main" ]; then
+            echo "TF_VAR_environment=prod" >> "$GITHUB_ENV"
+            echo "TF_VAR_ssh_public_key=${{ secrets.STAGING_SSH_KEY }}" >> "$GITHUB_ENV"
+            echo "TF_VAR_duckdns_token=${{ secrets.DUCKDNS_TOKEN }}" >> "$GITHUB_ENV"
+          else
+            echo "TF_VAR_environment=staging" >> "$GITHUB_ENV"
+            echo "TF_VAR_ssh_public_key=${{ secrets.STAGING_SSH_KEY }}" >> "$GITHUB_ENV"
+            echo "TF_VAR_duckdns_token=${{ secrets.DUCKDNS_TOKEN }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Init
+        run: terraform init
+
+      - name: Plan
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "production" ] || [ "${{ github.ref_name }}" = "main" ]; then
+            terraform plan -var-file="env/prod.tfvars" -out=tfplan
+          else
+            terraform plan -var-file="env/staging.tfvars" -out=tfplan
+          fi
+
+      - name: Apply
+        run: terraform apply -auto-approve tfplan
+
+      - name: Output staging VM IP
+        if: github.event.inputs.environment != 'production' && github.ref_name != 'main'
+        run: |
+          STAGING_IP=$(terraform output -raw staging_vm_public_ip 2>/dev/null || echo "")
+          echo "STAGING_VM_IP=$STAGING_IP" >> "$GITHUB_ENV"
+
+      - name: Output OKE cluster ID
+        if: github.event.inputs.environment == 'production' || github.ref_name == 'main'
+        run: |
+          OKE_ID=$(terraform output -raw oke_cluster_id 2>/dev/null || echo "")
+          echo "OKE_CLUSTER_ID=$OKE_ID" >> "$GITHUB_ENV"
+
+      - name: Clean up key
+        if: always()
+        run: rm -f /tmp/oci_key.pem
+
+  # ---------------------------------------------------------------------
+  # K8s Deploy - Staging (K3s via SSH) using composite action
+  # ---------------------------------------------------------------------
+  deploy-staging:
+    needs: terraform-apply
+    if: github.ref_name == 'develop' || github.event.inputs.environment == 'staging'
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy-oke
+        with:
+          environment: staging
+          overlay: staging
+          image_tag: sha-${{ github.sha::7 }}
+          staging_vm_ip: ${{ env.STAGING_VM_IP }}
+          staging_ssh_key: ${{ secrets.STAGING_SSH_KEY }}
+
+  # ---------------------------------------------------------------------
+  # K8s Deploy - Production (OKE via OCI CLI) using composite action
+  # ---------------------------------------------------------------------
+  deploy-production:
+    needs: terraform-apply
+    if: github.ref_name == 'main' || github.event.inputs.environment == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy-oke
+        with:
+          environment: production
+          overlay: production
+          image_tag: sha-${{ github.sha::7 }}
+          oci_user: ${{ secrets.OCI_CLI_USER }}
+          oci_tenancy: ${{ secrets.OCI_CLI_TENANCY }}
+          oci_fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          oci_key_content: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          oci_region: ${{ secrets.OCI_CLI_REGION }}
+          oke_cluster_id: ${{ secrets.OKE_CLUSTER_ID }}

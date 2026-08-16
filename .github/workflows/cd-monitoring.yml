@@ -1,0 +1,182 @@
+name: CD Monitoring
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to configure monitoring'
+        required: true
+        type: choice
+        options: [staging, production]
+
+concurrency:
+  group: cd-monitoring-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Deploy monitoring stack
+  # ---------------------------------------------------------------------
+  deploy-monitoring:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment == 'production' && 'production' || 'development' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl & helm
+        run: |
+          curl -sLO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      # -----------------------------------------------------------
+      # STAGING: Self-hosted Prometheus + Grafana on K3s VM
+      # -----------------------------------------------------------
+      - name: Configure staging monitoring (K3s VM)
+        if: github.event.inputs.environment == 'staging'
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "${{ secrets.STAGING_SSH_KEY }}" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -H ${{ secrets.STAGING_VM_IP }} >> ~/.ssh/known_hosts
+
+          # Deploy Prometheus stack via Helm on K3s
+          ssh -i ~/.ssh/staging_key ubuntu@${{ secrets.STAGING_VM_IP }} "
+            sudo -u ubuntu helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+            sudo -u ubuntu helm repo add grafana https://grafana.github.io/helm-charts
+            sudo -u ubuntu helm repo update
+
+            # Create monitoring namespace
+            sudo kubectl create namespace monitoring --dry-run=client -o yaml | sudo kubectl apply -f -
+
+            # Install kube-prometheus-stack
+            sudo -u ubuntu helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+              --namespace monitoring \
+              --set prometheus.prometheusSpec.retention=7d \
+              --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=5Gi \
+              --set grafana.enabled=true \
+              --set grafana.adminUser=${{ secrets.GRAFANA_ADMIN_USER }} \
+              --set grafana.adminPassword=${{ secrets.GRAFANA_ADMIN_PASSWORD }} \
+              --set grafana.service.type=ClusterIP \
+              --set grafana.ingress.enabled=true \
+              --set grafana.ingress.hosts[0]=grafana-staging.duckdns.org \
+              --set grafana.ingress.tls[0].hosts[0]=grafana-staging.duckdns.org \
+              --set grafana.ingress.tls[0].secretName=grafana-staging-tls \
+              --set alertmanager.enabled=false \
+              --set kubeStateMetrics.enabled=true \
+              --set nodeExporter.enabled=true
+
+            # Wait for deployments
+            sudo kubectl rollout status deployment/prometheus-grafana -n monitoring --timeout=180s
+            sudo kubectl rollout status statefulset/prometheus-prometheus-kube-prometheus-prometheus -n monitoring --timeout=180s
+          "
+
+      # -----------------------------------------------------------
+      # PRODUCTION: OCI Native Monitoring + Self-hosted Grafana on OKE
+      # -----------------------------------------------------------
+      - name: Configure production monitoring (OKE)
+        if: github.event.inputs.environment == 'production'
+        run: |
+          # Install OCI CLI
+          pip install --quiet oci-cli
+
+          # Configure OCI credentials
+          mkdir -p ~/.oci
+          printf '%s' "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_CLI_USER }}
+          fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_CLI_TENANCY }}
+          region=${{ secrets.OCI_CLI_REGION }}
+          key_file=~/.oci/key.pem
+          EOF
+          chmod 600 ~/.oci/config
+
+          # Fetch kubeconfig for OKE
+          mkdir -p ~/.kube
+          oci ce cluster create-kubeconfig \
+            --cluster-id "${{ secrets.OKE_CLUSTER_ID }}" \
+            --file "$HOME/.kube/config" \
+            --region "${{ secrets.OCI_CLI_REGION }}" \
+            --token-version 2.0.0 \
+            --kube-endpoint PUBLIC_ENDPOINT
+
+          # Add Helm repos
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo update
+
+          # Create monitoring namespace
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+          # Install self-hosted Grafana on OKE (Prometheus metrics from OCI Native Monitoring)
+          helm upgrade --install grafana grafana/grafana \
+            --namespace monitoring \
+            --set adminUser=${{ secrets.GRAFANA_ADMIN_USER }} \
+            --set adminPassword=${{ secrets.GRAFANA_ADMIN_PASSWORD }} \
+            --set service.type=ClusterIP \
+            --set ingress.enabled=true \
+            --set ingress.hosts[0]=grafana-orderit.duckdns.org \
+            --set ingress.tls[0].hosts[0]=grafana-orderit.duckdns.org \
+            --set ingress.tls[0].secretName=grafana-prod-tls \
+            --set datasources.datasources.yaml="
+              apiVersion: 1
+              datasources:
+                - name: OCI Monitoring
+                  type: prometheus
+                  access: proxy
+                  url: https://${{ secrets.OCI_CLI_REGION }}.monitoring.oraclecloud.com
+                  jsonData:
+                    ociRegion: ${{ secrets.OCI_CLI_REGION }}
+                    ociTenancy: ${{ secrets.OCI_CLI_TENANCY }}
+                    ociUser: ${{ secrets.OCI_CLI_USER }}
+                  secureJsonData:
+                    ociPrivateKey: '$(cat ~/.oci/key.pem | base64 -w0)'
+            " \
+            --set dashboards.default.kubernetes-cluster.gnetId=315 \
+            --set dashboards.default.node-exporter.gnetId=1860
+
+          # Wait for Grafana
+          kubectl rollout status deployment/grafana -n monitoring --timeout=180s
+
+          # Create ServiceMonitor for backend metrics (if using self-hosted Prometheus)
+          cat <<EOF | kubectl apply -f -
+          apiVersion: monitoring.coreos.com/v1
+          kind: ServiceMonitor
+          metadata:
+            name: orderit-backend
+            namespace: monitoring
+            labels:
+              release: prometheus
+          spec:
+            selector:
+              matchLabels:
+                app: orderit
+                component: backend
+            endpoints:
+            - port: metrics
+              interval: 30s
+              path: /metrics
+            namespaceSelector:
+              matchNames:
+              - orderit
+          EOF
+
+      - name: Verify monitoring
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "staging" ]; then
+            ssh -i ~/.ssh/staging_key ubuntu@${{ secrets.STAGING_VM_IP }} "
+              sudo kubectl get pods -n monitoring
+              curl -sf http://grafana-staging.duckdns.org/api/health
+            "
+          else
+            kubectl get pods -n monitoring
+            curl -sf http://grafana-orderit.duckdns.org/api/health
+          fi
+
+      - name: Clean up credentials
+        if: always()
+        run: |
+          rm -rf ~/.oci ~/.kube ~/.ssh/staging_key
