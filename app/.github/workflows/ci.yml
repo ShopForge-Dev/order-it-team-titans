@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Detect which parts of the repo changed so we don't run everything
+  # on every PR (terraform-only PRs shouldn't wait on npm installs, etc.)
+  # ---------------------------------------------------------------------
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      terraform: ${{ steps.filter.outputs.terraform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'app/backend/**'
+            frontend:
+              - 'app/frontend/**'
+            terraform:
+              - 'terraform/**'
+
+  backend-ci:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: app/backend/package-lock.json
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Lint (if configured)
+        run: npm run lint --if-present
+      - name: Test (if configured)
+        run: npm test --if-present
+      - name: Syntax check entrypoint
+        run: node --check server.js
+
+  frontend-ci:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: app/frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Test
+        run: npm test -- --watchAll=false
+        env:
+          CI: true
+      - name: Build
+        run: npm run build
+
+  docker-build-check:
+    needs: [changes, backend-ci, frontend-ci]
+    # Run even if one side had no changes, as long as it didn't fail
+    if: |
+      always() &&
+      needs.backend-ci.result != 'failure' &&
+      needs.frontend-ci.result != 'failure'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: backend
+            context: app/backend
+            changed: ${{ needs.changes.outputs.backend }}
+          - name: frontend
+            context: app/frontend
+            changed: ${{ needs.changes.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+        if: matrix.changed == 'true'
+      - uses: docker/setup-buildx-action@v3
+        if: matrix.changed == 'true'
+      - name: Build image (no push)
+        if: matrix.changed == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: false
+          tags: orderit-${{ matrix.name }}:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  terraform-ci:
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+      - name: Format check
+        run: terraform fmt -check -recursive
+      - name: Init (no backend, validate only)
+        run: terraform init -backend=false
+      - name: Validate
+        run: terraform validate
