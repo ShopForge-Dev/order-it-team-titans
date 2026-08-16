@@ -76,7 +76,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20' # Upgraded to 20 to satisfy package engine requirements
+          node-version: '24' # Upgraded to 20 to satisfy package engine requirements
       - name: Sync lockfile & install dependencies
         run: |
           npm i --package-lock-only --legacy-peer-deps
