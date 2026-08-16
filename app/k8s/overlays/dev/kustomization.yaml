@@ -20,9 +20,9 @@ replicas:
     count: 1
 
 images:
-  - name: ghcr.io/GITHUB_USER/orderit-backend
+  - name: ghcr.io/<GITHUB_ORG>/orderit-backend
     newTag: develop
-  - name: ghcr.io/GITHUB_USER/orderit-frontend
+  - name: ghcr.io/<GITHUB_ORG>/orderit-frontend
     newTag: develop
 
 patches:

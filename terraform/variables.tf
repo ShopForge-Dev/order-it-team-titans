@@ -46,11 +46,11 @@ variable "project" {
 variable "environment" {
   description = "Deployment environment."
   type        = string
-  default     = "dev"
+  default     = "staging"
 
   validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
-    error_message = "environment must be one of: dev, staging, prod."
+    condition     = contains(["staging", "prod"], var.environment)
+    error_message = "environment must be one of: staging, prod."
   }
 }
 
@@ -216,7 +216,46 @@ variable "cluster_type" {
 }
 
 variable "ssh_public_key" {
-  description = "SSH public key authorised on worker nodes. Null disables SSH access entirely."
+  description = "SSH public key authorised on worker nodes / staging VM. Null disables SSH access entirely."
+  type        = string
+  default     = null
+}
+
+###############################################################################
+# Staging VM (for staging environment)
+###############################################################################
+
+variable "staging_vm_shape" {
+  description = "VM shape for staging. VM.Standard.A1.Flex (ARM) is the Always-Free shape."
+  type        = string
+  default     = "VM.Standard.A1.Flex"
+
+  validation {
+    condition     = contains(["VM.Standard.A1.Flex", "VM.Standard.E2.1.Micro"], var.staging_vm_shape)
+    error_message = "staging_vm_shape must be VM.Standard.A1.Flex (ARM) or VM.Standard.E2.1.Micro (AMD) for Always Free."
+  }
+}
+
+variable "staging_vm_ocpus" {
+  description = "OCPUs for staging VM (Flex shape only). Always-Free budget is 4 OCPUs total."
+  type        = number
+  default     = 4
+}
+
+variable "staging_vm_memory_gbs" {
+  description = "Memory for staging VM in GB (Flex shape only). Always-Free budget is 24 GB total."
+  type        = number
+  default     = 24
+}
+
+variable "staging_vm_boot_volume_gbs" {
+  description = "Staging VM boot volume size in GB. Always-Free block storage total is 200 GB."
+  type        = number
+  default     = 100
+}
+
+variable "duckdns_token" {
+  description = "DuckDNS token for automatic DNS updates for staging domain."
   type        = string
   default     = null
 }

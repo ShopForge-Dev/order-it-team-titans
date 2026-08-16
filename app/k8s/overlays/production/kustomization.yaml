@@ -1,12 +1,14 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 metadata:
-  name: orderit-prod
+  name: orderit-production
 
 namespace: orderit
 
 bases:
   - ../../base
+
+namePrefix: ""
 
 commonLabels:
   environment: production
@@ -24,7 +26,7 @@ images:
     newTag: stable
 
 patches:
-  # Increase replicas in HPA for prod
+  # Increase replicas in HPA for production
   - target:
       group: autoscaling
       version: v2
@@ -32,11 +34,11 @@ patches:
       name: backend-hpa
     patch: |-
       - op: replace
-        path: /spec/maxReplicas
-        value: 20
-      - op: replace
         path: /spec/minReplicas
         value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 20
 
   - target:
       group: autoscaling
@@ -45,13 +47,13 @@ patches:
       name: frontend-hpa
     patch: |-
       - op: replace
-        path: /spec/maxReplicas
-        value: 10
-      - op: replace
         path: /spec/minReplicas
         value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 10
 
-  # Enable pod disruption budget for prod
+  # Enable pod disruption budget for production
   - target:
       group: apps
       version: v1
@@ -61,3 +63,23 @@ patches:
       - op: replace
         path: /spec/template/spec/affinity/podAntiAffinity/preferredDuringSchedulingIgnoredDuringExecution/0/weight
         value: 100
+
+  # Production ingress with custom domain + Let's Encrypt
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: orderit-ingress
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: orderit.duckdns.org
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: orderit.duckdns.org
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: orderit-tls
+      - op: replace
+        path: /metadata/annotations/cert-manager.io~1cluster-issuer
+        value: letsencrypt-prod

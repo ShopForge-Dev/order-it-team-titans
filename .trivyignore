@@ -1,0 +1,11 @@
+# Trivy ignore file for Orderit
+# Format: <vulnerability_id> <reason>
+
+# Node.js base image vulnerabilities (accepted risk for alpine base)
+CVE-2023-XXXXX # Example: accepted risk for node:18-alpine base image
+
+# Development dependencies that don't affect production
+CVE-2023-XXXXX # Example: dev-only dependency vulnerability
+
+# Add specific CVEs here as needed with justification
+# Format: CVE-YYYY-NNNNN # Reason for ignoring

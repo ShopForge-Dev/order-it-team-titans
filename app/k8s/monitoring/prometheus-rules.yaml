@@ -1,0 +1,139 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: orderit-alerts
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  groups:
+  - name: orderit.rules
+    rules:
+    # Backend alerts
+    - alert: OrderitBackendDown
+      expr: up{job="orderit-backend"} == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Orderit backend is down"
+        description: "Backend pod has been down for more than 2 minutes"
+
+    - alert: OrderitBackendHighErrorRate
+      expr: |
+        sum(rate(http_requests_total{job="orderit-backend",status=~"5.."}[5m])) 
+        / 
+        sum(rate(http_requests_total{job="orderit-backend"}[5m])) > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High error rate on Orderit backend"
+        description: "Backend 5xx error rate is above 5% for 5 minutes"
+
+    - alert: OrderitBackendHighLatency
+      expr: |
+        histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job="orderit-backend"}[5m])) by (le)) > 2
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High latency on Orderit backend"
+        description: "Backend P95 latency is above 2 seconds for 5 minutes"
+
+    - alert: OrderitDatabaseConnectionFailed
+      expr: |
+        mongodb_up{job="orderit-backend"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Orderit database connection failed"
+        description: "Backend cannot connect to MongoDB Atlas"
+
+    # Frontend alerts
+    - alert: OrderitFrontendDown
+      expr: up{job="orderit-frontend"} == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Orderit frontend is down"
+        description: "Frontend pod has been down for more than 2 minutes"
+
+    # Kubernetes alerts
+    - alert: K8sPodNotReady
+      expr: |
+        kube_pod_status_ready{namespace="orderit",condition="true"} == 0
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Kubernetes pod not ready in orderit namespace"
+        description: "Pod {{ $labels.pod }} has not been ready for 5 minutes"
+
+    - alert: K8sPodRestarting
+      expr: |
+        increase(kube_pod_container_status_restarts_total{namespace="orderit"}[15m]) > 2
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Kubernetes pod restarting frequently"
+        description: "Pod {{ $labels.pod }} restarted more than 2 times in 15 minutes"
+
+    - alert: K8sNodeNotReady
+      expr: |
+        kube_node_status_condition{condition="Ready",status="true"} == 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Kubernetes node not ready"
+        description: "Node {{ $labels.node }} has not been ready for 5 minutes"
+
+    # Resource alerts
+    - alert: K8sPodMemoryUsageHigh
+      expr: |
+        (container_memory_usage_bytes{namespace="orderit"} / container_spec_memory_limit_bytes{namespace="orderit"}) > 0.85
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Pod memory usage high"
+        description: "Pod {{ $labels.pod }} memory usage is above 85% of limit"
+
+    - alert: K8sPodCPUUsageHigh
+      expr: |
+        (sum(rate(container_cpu_usage_seconds_total{namespace="orderit"}[5m])) by (pod) 
+        / 
+        sum(container_spec_cpu_quota{namespace="orderit"} / container_spec_cpu_period{namespace="orderit"}) by (pod)) > 0.85
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Pod CPU usage high"
+        description: "Pod {{ $labels.pod }} CPU usage is above 85% of limit"
+
+    # Business metrics alerts
+    - alert: OrderitOrderCreationFailed
+      expr: |
+        increase(orderit_orders_created_total{status="failed"}[5m]) > 10
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High order creation failure rate"
+        description: "More than 10 orders failed to create in the last 5 minutes"
+
+    - alert: OrderitPaymentFailureRateHigh
+      expr: |
+        sum(rate(orderit_payments_total{status="failed"}[5m])) 
+        / 
+        sum(rate(orderit_payments_total[5m])) > 0.1
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High payment failure rate"
+        description: "Payment failure rate is above 10% for 5 minutes"

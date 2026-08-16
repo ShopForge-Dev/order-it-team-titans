@@ -1,0 +1,79 @@
+name: Terraform
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['terraform/**']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to apply (dev or prod)'
+        required: true
+        type: choice
+        options: [dev, prod]
+
+defaults:
+  run:
+    working-directory: terraform
+
+env:
+  TF_VAR_tenancy_ocid: ${{ secrets.OCI_CLI_TENANCY }}
+  TF_VAR_user_ocid: ${{ secrets.OCI_CLI_USER }}
+  TF_VAR_fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
+  TF_VAR_region: ${{ secrets.OCI_CLI_REGION }}
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+
+      - name: Write OCI private key
+        run: printf '%s' "${{ secrets.OCI_CLI_KEY_CONTENT }}" > /tmp/oci_key.pem
+      - run: echo "TF_VAR_private_key_path=/tmp/oci_key.pem" >> "$GITHUB_ENV"
+
+      # NOTE: the remote (S3-compatible, OCI Object Storage) backend block in
+      # versions.tf is commented out by default — see terraform/versions.tf.
+      # It must be uncommented and bootstrapped before this job will persist
+      # state between runs; until then this only validates the plan is
+      # constructible, it does not track drift.
+      - name: Init
+        run: terraform init
+
+      - name: Plan
+        run: terraform plan -var-file="env/${{ matrix.environment }}.tfvars" -out=tfplan
+        continue-on-error: false
+
+      - name: Post plan summary
+        run: terraform show -no-color tfplan >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'development' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+
+      - name: Write OCI private key
+        run: printf '%s' "${{ secrets.OCI_CLI_KEY_CONTENT }}" > /tmp/oci_key.pem
+      - run: echo "TF_VAR_private_key_path=/tmp/oci_key.pem" >> "$GITHUB_ENV"
+
+      - name: Init
+        run: terraform init
+
+      - name: Apply
+        run: terraform apply -auto-approve -var-file="env/${{ inputs.environment }}.tfvars"
+
+      - name: Clean up key
+        if: always()
+        run: rm -f /tmp/oci_key.pem

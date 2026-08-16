@@ -1,0 +1,118 @@
+name: CI Check
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+concurrency:
+  group: ci-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Detect which parts of the repo changed
+  # ---------------------------------------------------------------------
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      terraform: ${{ steps.filter.outputs.terraform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'app/backend/**'
+            frontend:
+              - 'app/frontend/**'
+            terraform:
+              - 'terraform/**'
+
+  # ---------------------------------------------------------------------
+  # Frontend: Full lint + build check
+  # ---------------------------------------------------------------------
+  frontend-lint:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: app/frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Lint
+        run: npm run lint
+      - name: Build (syntax + type check)
+        run: npm run build
+        env:
+          CI: true
+
+  # ---------------------------------------------------------------------
+  # Backend: Syntax check only (skip obfuscated files)
+  # ---------------------------------------------------------------------
+  backend-syntax:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: app/backend/package-lock.json
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Check for obfuscation in non-.obfuscated files
+        run: |
+          # Fail if any non-.obfuscated .js files contain obfuscation patterns
+          OBFUSCATED_FILES=$(find . -name "*.js" -not -name "*.obfuscated" -not -path "./node_modules/*" -exec grep -l "_0x[0-9a-f]\{4,\}" {} \;)
+          if [ -n "$OBFUSCATED_FILES" ]; then
+            echo "::error::Obfuscation detected in non-.obfuscated files:"
+            echo "$OBFUSCATED_FILES"
+            exit 1
+          fi
+          echo "No obfuscation found in clean files."
+      - name: Syntax check entrypoints
+        run: |
+          node --check server.js
+          node --check app.js
+          node --check config/database.js
+      - name: Lint (only clean files)
+        run: npm run lint
+
+  # ---------------------------------------------------------------------
+  # Terraform: Format check
+  # ---------------------------------------------------------------------
+  terraform-fmt:
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+      - name: Format check
+        run: terraform fmt -check -recursive

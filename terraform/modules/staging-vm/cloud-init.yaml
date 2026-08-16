@@ -1,0 +1,130 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - docker.io
+  - nginx
+  - certbot
+  - python3-certbot-nginx
+
+write_files:
+  - path: /etc/hosts
+    content: |
+      127.0.0.1 localhost
+      127.0.1.1 ${name_prefix}-staging
+
+runcmd:
+  # Install K3s
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --write-kubeconfig-mode=644" sh -
+  
+  # Wait for K3s to be ready
+  - sleep 30
+  
+  # Configure kubectl for ubuntu user
+  - mkdir -p /home/ubuntu/.kube
+  - cp /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
+  - chown -R ubuntu:ubuntu /home/ubuntu/.kube
+  - echo 'export KUBECONFIG=/home/ubuntu/.kube/config' >> /home/ubuntu/.bashrc
+  
+  # Install Helm
+  - curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  
+  # Add Helm repos
+  - sudo -u ubuntu helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+  - sudo -u ubuntu helm repo add jetstack https://charts.jetstack.io
+  - sudo -u ubuntu helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+  - sudo -u ubuntu helm repo add grafana https://grafana.github.io/helm-charts
+  - sudo -u ubuntu helm repo update
+  
+  # Install ingress-nginx
+  - sudo -u ubuntu helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+      --namespace ingress-nginx --create-namespace \
+      --set controller.service.type=LoadBalancer \
+      --set controller.service.annotations."service\.beta\.kubernetes\.io/oci-load-balancer-shape"="flexible" \
+      --set controller.service.annotations."service\.beta\.kubernetes\.io/oci-load-balancer-shape-flex-min"="10" \
+      --set controller.service.annotations."service\.beta\.kubernetes\.io/oci-load-balancer-shape-flex-max"="100"
+  
+  # Install cert-manager
+  - sudo -u ubuntu kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+  
+  # Wait for cert-manager
+  - sleep 30
+  
+  # Create ClusterIssuer for Let's Encrypt
+  - |
+    cat <<EOF | sudo -u ubuntu kubectl apply -f -
+    apiVersion: cert-manager.io/v1
+    kind: ClusterIssuer
+    metadata:
+      name: letsencrypt-prod
+    spec:
+      acme:
+        server: https://acme-v02.api.letsencrypt.org/directory
+        email: admin@${name_prefix}.duckdns.org
+        privateKeySecretRef:
+          name: letsencrypt-prod
+        solvers:
+        - http01:
+            ingress:
+              class: nginx
+    EOF
+
+  # Install Prometheus stack (for staging monitoring)
+  - |
+    cat <<EOF | sudo -u ubuntu kubectl apply -f -
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: monitoring
+    EOF
+  - sudo -u ubuntu helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+      --namespace monitoring --create-namespace \
+      --set prometheus.prometheusSpec.retention=7d \
+      --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=5Gi \
+      --set grafana.enabled=true \
+      --set grafana.adminUser=admin \
+      --set grafana.adminPassword=changeme \
+      --set grafana.service.type=ClusterIP \
+      --set alertmanager.enabled=false
+  
+  # Enable and start Docker
+  - systemctl enable docker
+  - systemctl start docker
+  
+  # Add ubuntu user to docker group
+  - usermod -aG docker ubuntu
+  
+  # Configure nginx reverse proxy for K3s API (optional, for external access)
+  - |
+    cat <<'NGINX' > /etc/nginx/sites-available/k3s-api
+    server {
+        listen 6443;
+        server_name _;
+        
+        location / {
+            proxy_pass https://127.0.0.1:6443;
+            proxy_ssl_verify off;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+    }
+    NGINX
+  - ln -sf /etc/nginx/sites-available/k3s-api /etc/nginx/sites-enabled/
+  - systemctl reload nginx
+  
+  # Create DuckDNS update script
+  - |
+    cat <<'DUCKDNS' > /usr/local/bin/update-duckdns.sh
+    #!/bin/bash
+    DOMAIN="${name_prefix}-staging"
+    TOKEN="${duckdns_token}"
+    curl -s "https://www.duckdns.org/update?domains=$DOMAIN&token=$TOKEN&ip="
+    DUCKDNS
+  - chmod +x /usr/local/bin/update-duckdns.sh
+  
+  # Add cron job for DuckDNS (runs every 5 minutes)
+  - echo "*/5 * * * * root /usr/local/bin/update-duckdns.sh" > /etc/cron.d/duckdns
+
+final_message: "Staging VM with K3s is ready! Public IP: $PUBLIC_IP"
