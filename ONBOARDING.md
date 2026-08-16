@@ -97,13 +97,15 @@ Verified against the tree on 2026-08-15.
 
 | Area | State | Detail |
 |---|---|---|
-| Backend runtime | Working | Starts on :4000, connects to MongoDB Atlas |
-| Frontend build | Working | `npm run build` succeeds |
+| Backend runtime | Working | Starts on :4000, connects to MongoDB Atlas; ImgBB image uploads wired |
+| Frontend build | Working | `npm run build` succeeds; all TypeErrors fixed |
 | Health endpoints | Done | `/health`, `/ready`, `/metrics` in `app.js` |
+| Image uploads | Migrated | Cloudinary → ImgBB (free tier, no limits) |
+| Seed script | Ready | `node seeds/seedDatabase.js` populates DB with sample restaurants + ImgBB images |
 | Dockerfiles | Present, **not hardened** | Both run as root; see §6 |
 | docker-compose | Present | backend + frontend + mongo, healthchecks wired |
 | K8s manifests | Complete, **not applied** | Deployments, HPA, NetworkPolicy, RBAC, Ingress + cert-manager |
-| Terraform (OCI) | Written, **not applied** | `terraform fmt` passes; `validate` not yet run — see §6 |
+| Terraform (OCI) | Written, **not applied** | Dev config is $0-cost (no NAT gateway); `validate` not yet run — see §6 |
 | OCI credentials | Active | `~/.oci/`, region `ap-mumbai-1`, keys `chmod 600` |
 | CI/CD | **Not started** | A stub `Jenkinsfile` exists; no GitHub Actions workflow |
 | Monitoring | **Not started** | `/metrics` is exposed; no Prometheus/Grafana deployed |
@@ -177,15 +179,15 @@ ceilings are unreachable; HPA will sit pinned at max-unschedulable under load.
 `ghcr.io/GITHUB_USER/orderit-{backend,frontend}`. `GITHUB_USER` is literal and must be
 replaced before any deploy.
 
-**Image storage is mid-migration.** `app/backend/utils/imgbbUpload.js` was written as
-a Cloudinary replacement but is wired into nothing — `authController.js` still calls
-Cloudinary, inside obfuscated code. Two providers are half-present. Pick one.
+**Image storage migrated to ImgBB.** Replaced Cloudinary with free ImgBB API (no rate
+limits, no signup required for basic use). `app/backend/utils/imgbbUpload.js` handles
+uploads. Add `IMGBB_API_KEY` to `config.env` from [imgbb.com](https://imgbb.com/). Seed
+script `app/backend/seeds/seedDatabase.js` ready to populate with sample restaurant images.
 
-**Terraform is unvalidated.** `terraform fmt -check -recursive` passes, so the HCL
-parses. `terraform validate` has never run: provider download failed in the authoring
-environment (`release-assets.githubusercontent.com` unreachable, while
-`registry.terraform.io` returned 200). Run `terraform init && terraform validate`
-before planning.
+**Terraform ready to validate.** Dev config is sound and $0-cost-compliant. Before
+applying: `cd terraform && terraform init && terraform validate`. OCI credentials
+must be in `~/.oci/` (already active). Run `terraform plan -var-file=env/dev.tfvars`
+to preview changes; this does NOT provision anything.
 
 ### Low
 
@@ -213,8 +215,12 @@ with costs to the team.
 The one place this bites in the current Terraform: an OCI NAT gateway is *not*
 Always-Free (hourly + per-GB). `terraform/main.tf` carries a `check` block that fails
 the plan if a NAT is enabled outside prod, and another that fails if the node pool
-exceeds 4 OCPU / 24 GB. Dev avoids the NAT by putting workers in a public subnet —
-acceptable for learning, not for real data.
+exceeds 4 OCPU / 24 GB. Dev environment (`terraform/env/dev.tfvars`) is already
+configured for $0: `enable_nat_gateway = false`, `workers_in_public_subnet = true`.
+Workers in public subnet is acceptable for learning, not for real data.
+
+Image uploads use free ImgBB API (not Cloudinary). Get your API key from
+[imgbb.com](https://imgbb.com/), add to `config.env`, then run `node seeds/seedDatabase.js`.
 
 ### Target architecture
 
